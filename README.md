@@ -12,6 +12,21 @@ node server.mjs
 Then open http://localhost:5173. No install is needed: three.js loads from jsDelivr through an import map.
 Any static server works, but opening `index.html` as a file does not, because ES modules need http.
 
+## Install as an app (PWA)
+
+The page is a Progressive Web App: a manifest, icons and a service worker. Once installed it opens full-screen
+and keeps working offline after the first visit.
+
+- **Desktop Chrome / Edge**: click the ⬇ button in the control bar, or the install icon in the address bar.
+- **Android**: ⬇ button, or the browser menu → *Install app*.
+- **iPad / iPhone (Safari)**: Share → *Add to Home Screen*. The ⬇ button shows this hint.
+
+Installing needs **https** (or `localhost`). To install on a tablet, host the folder over https, for example with
+GitHub Pages: repo **Settings → Pages → Deploy from a branch → `main` / root**. The site is then at
+`https://<user>.github.io/<repo>/`. All paths are relative, so it works from that sub-folder.
+When files change, bump `VERSION` in `sw.js` so installed copies drop their old offline cache.
+Icons are generated with `node tools/make-icons.mjs`.
+
 ## Controls
 
 | | |
@@ -70,6 +85,7 @@ The URL hash keeps the year, time of day and camera (`#y=1871.80&tod=21&cam=harb
 - `src/nature.js`: trees and Indigenous camps
 - `src/life.js`: traffic, trains, ships, aircraft, turbines, smoke and light sprites
 - `src/materials.js`: procedural facade / ground / water shaders
-- `src/timeline.js`: eras and events; `src/ui.js`: controls
+- `src/timeline.js`: eras and events; `src/ui.js`: controls; `src/touch.js`: touch gestures
+- `sw.js`, `manifest.webmanifest`, `icons/`: PWA (offline cache, install)
 
 Quality is detected from the GPU (Auto → High / Medium / Low) and resolution adapts to keep playback smooth.

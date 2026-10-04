@@ -18,6 +18,7 @@ export class UI {
     this.bindControls();
     this.bindKeys();
     this.bindTouchbar();
+    this.bindInstall();
     this.syncAll();
   }
 
@@ -184,6 +185,28 @@ export class UI {
     if (matchMedia('(pointer: coarse)').matches) {
       setTimeout(() => this.toast('Swipe sideways to move through time · double-tap to play/pause · two fingers for free camera', 5000), 1500);
     }
+  }
+
+  // "Install app": Chrome/Edge/Android fire beforeinstallprompt; iOS needs Share → Add to Home Screen
+  bindInstall() {
+    const btn = $('install');
+    const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
+    if (standalone) return;
+    let deferred = null;
+    addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferred = e; btn.hidden = false; });
+    addEventListener('appinstalled', () => { btn.hidden = true; deferred = null; this.toast('Installed: open it from your home screen or app list'); });
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (ios) btn.hidden = false;
+    btn.onclick = async () => {
+      if (deferred) {
+        deferred.prompt();
+        await deferred.userChoice;
+        deferred = null;
+        btn.hidden = true;
+      } else if (ios) {
+        this.toast('On iPad/iPhone: tap Share ⎋ then “Add to Home Screen”', 6000);
+      }
+    };
   }
 
   cyclePreset(d) {

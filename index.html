@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Chicago TL">
+  <meta name="theme-color" content="#0b0e13">
+  <meta name="description" content="Interactive 3D time-lapse of Chicago from 1800 to 2050.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>Chicago 1800–2050</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -121,6 +128,7 @@
         <div class="cluster right">
           <select id="cam-select" title="Camera"></select>
           <button class="icon-btn" id="night-btn" title="Toggle day / night (N)">☾</button>
+          <button class="icon-btn install-btn" id="install" title="Install app" hidden>⬇</button>
           <button class="icon-btn" id="settings" title="Settings">⚙</button>
           <button class="icon-btn" id="hide" title="Hide UI (H)">⤢</button>
         </div>
@@ -140,5 +148,11 @@
   <div id="toast" role="status"></div>
 
   <script type="module" src="src/main.js"></script>
+  <script>
+    // installable / offline: register the service worker (needs https or localhost)
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW registration failed', err)));
+    }
+  </script>
 </body>
 </html>

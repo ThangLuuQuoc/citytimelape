@@ -207,3 +207,4 @@ button, .seg button, select, input { touch-action: manipulation; }
   #touchbar button { width: 42px; height: 42px; font-size: 17px; }
   #toast { top: auto; bottom: 230px; }
 }
+.install-btn { background: rgba(242, 180, 90, 0.22); border-color: var(--accent); }
