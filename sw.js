@@ -1,7 +1,7 @@
 // Service worker: makes the time-lapse installable and usable offline.
 // App files: network-first (updates show up immediately), cached copy when offline.
 // three.js from the CDN and Google Fonts: cache-first (they're versioned / immutable).
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `ctl-shell-${VERSION}`;
 const RUNTIME = `ctl-runtime-${VERSION}`;
 

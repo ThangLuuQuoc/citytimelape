@@ -70,7 +70,9 @@ async function main() {
   let q = QUALITY[autoQuality];
   let pixelRatio = q.pr;
   renderer.setPixelRatio(pixelRatio);
-  renderer.setSize(innerWidth, innerHeight);
+  // updateStyle=false: never pin the canvas to a px size, CSS keeps it full-screen (an installed PWA
+  // starts smaller and then grows to full screen / rotates, which left a black band on the right)
+  renderer.setSize(innerWidth, innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.55;
   renderer.shadowMap.enabled = true;
@@ -228,7 +230,14 @@ async function main() {
     labelRenderer.setSize(w, h);
     life.setViewport(h * renderer.getPixelRatio(), camera.fov);
   }
-  new ResizeObserver(resize).observe(app);
+  // resize right away (not on the next frame): a backgrounded or just-launched PWA may not get frames yet
+  const queueResize = () => resize();
+  new ResizeObserver(queueResize).observe(app);
+  addEventListener('resize', queueResize);
+  addEventListener('orientationchange', () => { queueResize(); setTimeout(resize, 350); });
+  window.visualViewport?.addEventListener('resize', queueResize);
+  matchMedia('(display-mode: standalone), (display-mode: fullscreen)').addEventListener?.('change', () => setTimeout(resize, 100));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) queueResize(); });
   resize();
 
   // ------------------------------------------------------------ UI
