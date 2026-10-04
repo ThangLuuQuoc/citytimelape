@@ -6,13 +6,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Chicago TL">
+  <meta name="apple-mobile-web-app-title" content="City TL">
   <meta name="theme-color" content="#0b0e13">
   <meta name="description" content="Interactive 3D time-lapse of Chicago from 1800 to 2050.">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <title>Chicago 1800–2050</title>
+  <title>City Time-lapse 1800–2050</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
@@ -30,7 +30,7 @@
   <div id="app"></div>
 
   <div id="loading">
-    <div class="loading-title">Chicago <span>1800 → 2050</span></div>
+    <div class="loading-title">City Time-lapse <span>1800 → 2050</span></div>
     <div id="loading-text">Loading three.js…</div>
   </div>
 
@@ -54,6 +54,11 @@
       <div class="panel-head">
         <span>Settings</span>
         <button class="icon-btn" id="panel-close" title="Close">✕</button>
+      </div>
+
+      <div class="group">
+        <label class="lbl">City</label>
+        <select id="city-select-panel"></select>
       </div>
 
       <div class="group">
@@ -126,6 +131,7 @@
         </div>
         <div class="cluster jumps" id="jumps"></div>
         <div class="cluster right">
+          <select id="city-select" title="City"></select>
           <select id="cam-select" title="Camera"></select>
           <button class="icon-btn" id="night-btn" title="Toggle day / night (N)">☾</button>
           <button class="icon-btn install-btn" id="install" title="Install app" hidden>⬇</button>
@@ -146,6 +152,7 @@
   <button id="show-ui" hidden title="Show UI (H)">Show controls</button>
 
   <div id="toast" role="status"></div>
+  <div id="moment" role="status" aria-live="polite"></div>
 
   <script type="module" src="src/main.js"></script>
   <script>

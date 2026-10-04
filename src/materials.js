@@ -41,7 +41,11 @@ const TIMED_VERT = /* glsl */`
   float base = isCrown * hBody;
   vec2 fp = iBox.zw * mix(1.0, iShape.z, isCrown);
   float alive = step(0.01, hh);
-  transformed = vec3(transformed.x * fp.x, transformed.y * hh + base, transformed.z * fp.y) * alive + vec3(iBox.x, 0.0, iBox.y);
+  vec3 lp = vec3(transformed.x * fp.x, transformed.y * hh + base, transformed.z * fp.y) * alive;
+  tLocal = lp + vec3(iBox.x, 0.0, iBox.y);            // unrotated: drives the facade pattern
+  float cr = cos(iShape.w), sr = sin(iShape.w);        // lot rotation (e.g. Manhattan's tilted grid)
+  lp.xz = vec2(cr * lp.x + sr * lp.z, -sr * lp.x + cr * lp.z);
+  transformed = lp + vec3(iBox.x, 0.0, iBox.y);
   tTop = base + hh;
 }
 #endif`;
@@ -53,7 +57,7 @@ export function timedDepthMaterial() {
     s.uniforms.uYear = U.uYear;
     s.vertexShader = s.vertexShader
       .replace('#include <common>', '#include <common>\n' + TIMED_VERT_PARS)
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nfloat tTop = 1e5;\n' + TIMED_VERT);
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nfloat tTop = 1e5; vec3 tLocal = vec3(0.0);\n' + TIMED_VERT);
   };
   m.customProgramCacheKey = () => 'timed-depth-v1';
   return m;
@@ -76,6 +80,10 @@ export const STYLE_DEFS = {
   gold:       { wall: 0xb08a3a, win: 0x3a2e18, lit: [1.0, 0.85, 0.5], litAmt: 1.6, chance: 0.9, floorH: 3.0, winW: 1.5, mx: 0.2, my: 0.2, roof: 0x8a6a2a, glass: 0.3, metal: 0.8 },
   darkgreen:  { wall: 0x1f3229, win: 0x18211d, lit: [1.0, 0.85, 0.6], litAmt: 1.0, chance: 0.45, floorH: 3.8, winW: 2.2, mx: 0.3, my: 0.2, roof: 0x202a25, glass: 0.2 },
   steel:      { wall: 0x6b6f73, win: 0x6b6f73, lit: [1, 1, 1], litAmt: 0, chance: 0, floorH: 1000, winW: 1000, mx: 0.5, my: 0.5, roof: 0x55595d, glass: 0, metal: 0.7 },
+  granite:    { wall: 0x6f6b66, win: 0x2e3338, lit: [1.0, 0.9, 0.75], litAmt: 1.0, chance: 0.5, floorH: 3.8, winW: 1.8, mx: 0.18, my: 0.2, roof: 0x4e4b48, glass: 0.5 },
+  copper:     { wall: 0x5e9c86, win: 0x5e9c86, lit: [1, 1, 1], litAmt: 0, chance: 0, floorH: 1000, winW: 1000, mx: 0.5, my: 0.5, roof: 0x5e9c86, glass: 0, metal: 0.3 },
+  // World Trade Center: narrow aluminium-clad columns with slit windows
+  wtc:        { wall: 0xb4bac0, win: 0x2f3842, lit: [1.0, 0.95, 0.85], litAmt: 1.1, chance: 0.55, floorH: 3.66, winW: 1.02, mx: 0.3, my: 0.04, roof: 0x6c7075, glass: 0.5, metal: 0.45 },
   timber:     { wall: 0x6e5a42, win: 0x6e5a42, lit: [1, 0.6, 0.3], litAmt: 0, chance: 0, floorH: 1000, winW: 1000, mx: 0.5, my: 0.5, roof: 0x5a4a38, glass: 0 },
   bark:       { wall: 0x6a5a45, win: 0x6a5a45, lit: [1, 0.6, 0.3], litAmt: 0, chance: 0, floorH: 1000, winW: 1000, mx: 0.5, my: 0.5, roof: 0x7a6a50, glass: 0 },
 };
@@ -100,12 +108,19 @@ function patchBuilding(mat, def) {
       .replace('#include <common>', `#include <common>
 varying vec3 vBW; varying vec3 vBN; varying float vSeed; varying float vTop;
 ${TIMED_VERT_PARS}`)
+      .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+vec3 tN0 = objectNormal;
+#ifdef TIMED
+  { float cr = cos(iShape.w), sr = sin(iShape.w);
+    objectNormal = vec3(cr * objectNormal.x + sr * objectNormal.z, objectNormal.y, -sr * objectNormal.x + cr * objectNormal.z); }
+#endif`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-float tTop = 1e5;
+float tTop = 1e5; vec3 tLocal = vec3(0.0);
 ${TIMED_VERT}
 {
   #ifdef TIMED
-    vBW = (modelMatrix * vec4(transformed, 1.0)).xyz;
+    vBW = tLocal;
+    vBN = tN0;
     vTop = tTop;
     vSeed = fract(sin(dot(floor(iBox.xy * 0.37), vec2(12.9898, 78.233))) * 43758.5453);
   #else
@@ -114,12 +129,13 @@ ${TIMED_VERT}
     #ifdef USE_INSTANCING
       p = instanceMatrix * p; org = instanceMatrix * org;
     #endif
-    vBW = (modelMatrix * p).xyz;
+    // facade pattern in the object's own (unrotated) frame, so rotated landmarks keep straight window rows
+    vBW = vec3(p.x + modelMatrix[3].x, (modelMatrix * p).y, p.z + modelMatrix[3].z);
     org = modelMatrix * org;
     vTop = 1e5;
     vSeed = fract(sin(dot(floor(org.xz * 0.37), vec2(12.9898, 78.233))) * 43758.5453);
+    vBN = tN0;
   #endif
-  vBN = normalize(mat3(modelMatrix) * objectNormal);
 }`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
@@ -184,7 +200,7 @@ metalnessFactor = mix(metalnessFactor, 0.35, gWin * uGlass);`)
   totalEmissiveRadiance += vec3(1.0, 0.8, 0.5) * 0.5 * crown * uCrownGlow * uNight;
 }`);
   };
-  mat.customProgramCacheKey = () => 'building-v1-' + mat.type;
+  mat.customProgramCacheKey = () => 'building-v2-' + mat.type;
   return mat;
 }
 
@@ -234,12 +250,16 @@ function makeNoiseTexture(size = 256) {
   return t;
 }
 
-export function createGroundMaterial(landTex, shoreTex) {
+// grid: street grid of the city (rotation, block sizes, arterial spacing, downtown rectangle with square blocks)
+export function createGroundMaterial(landTex, shoreTex, grid = {}, region = REGION) {
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   const gu = {
     uLand: { value: landTex },
     uShore: { value: shoreTex },
-    uRegion: { value: new THREE.Vector4(REGION.minX, REGION.minZ, REGION.maxX - REGION.minX, REGION.maxZ - REGION.minZ) },
+    uRegion: { value: new THREE.Vector4(region.minX, region.minZ, region.maxX - region.minX, region.maxZ - region.minZ) },
+    uGridRot: { value: new THREE.Vector2(Math.cos(grid.rot || 0), Math.sin(grid.rot || 0)) },
+    uGridStep: { value: new THREE.Vector3(grid.x || 100.6, grid.z || 201.2, grid.art || 804.67) },
+    uLoop: { value: new THREE.Vector4(...(grid.loop || [-800, 240, -640, 1100])) },
     uShoreRange: { value: new THREE.Vector2(SHORE_TEX.minZ, SHORE_TEX.maxZ - SHORE_TEX.minZ) },
     uStreetLight: { value: new THREE.Vector3(1, 0.7, 0.35) },
     uStreetAmt: { value: 0 },
@@ -256,6 +276,7 @@ export function createGroundMaterial(landTex, shoreTex) {
       .replace('#include <common>', `#include <common>
 varying vec3 vGW;
 uniform sampler2D uLand, uShore, uNoise; uniform vec4 uRegion; uniform vec2 uShoreRange;
+uniform vec2 uGridRot; uniform vec3 uGridStep; uniform vec4 uLoop;
 uniform float uYear, uNight, uSnow, uTime, uAutumn, uStreetAmt;
 uniform vec3 uStreetLight, uRoadTone;
 ${GLSL_HASH}
@@ -285,13 +306,14 @@ float gRoad; float gUrban; float gPark; float gNS;`)
   // urban fabric
   float settle = L.r;
   gUrban = smoothstep(settle, settle + 14.0, uYear);
-  float cx = p.x / 100.6, cz = p.y / 201.2;
-  bool loop = p.x > -800.0 && p.x < 240.0 && p.y > -640.0 && p.y < 1100.0;
-  if (loop) cz = p.y / 100.6;
-  float fx = abs(fract(cx + 0.5) - 0.5) * 100.6;
-  float fz = abs(fract(cz + 0.5) - 0.5) * (loop ? 100.6 : 201.2);
-  vec2 aa = fwidth(p) * 0.75 + 0.5;
-  float art = step(abs(fract(p.x / 804.67 + 0.5) - 0.5) * 804.67, 16.0) + step(abs(fract(p.y / 804.67 + 0.5) - 0.5) * 804.67, 16.0);
+  // street grid in the city's own (possibly rotated) frame: matches the building lots' rotation
+  vec2 gp = vec2(uGridRot.x * p.x - uGridRot.y * p.y, uGridRot.y * p.x + uGridRot.x * p.y);
+  bool loop = p.x > uLoop.x && p.x < uLoop.y && p.y > uLoop.z && p.y < uLoop.w;
+  float stepZ = loop ? uGridStep.x : uGridStep.y;
+  float fx = abs(fract(gp.x / uGridStep.x + 0.5) - 0.5) * uGridStep.x;
+  float fz = abs(fract(gp.y / stepZ + 0.5) - 0.5) * stepZ;
+  vec2 aa = fwidth(gp) * 0.75 + 0.5;
+  float art = step(abs(fract(gp.x / uGridStep.z + 0.5) - 0.5) * uGridStep.z, 16.0) + step(abs(fract(gp.y / uGridStep.z + 0.5) - 0.5) * uGridStep.z, 16.0);
   float rw = mix(9.0, 13.0, clamp(art, 0.0, 1.0));
   gNS = step(fx, fz);   // 1 on north–south streets
   gRoad = max(1.0 - smoothstep(rw - aa.x, rw + aa.x, fx), 1.0 - smoothstep(rw - aa.y, rw + aa.y, fz)) * gUrban;
@@ -336,7 +358,7 @@ float gRoad; float gUrban; float gPark; float gNS;`)
   totalEmissiveRadiance += uStreetLight * gUrban * uNight * uStreetAmt * 0.025;
 }`);
   };
-  mat.customProgramCacheKey = () => 'ground-v1';
+  mat.customProgramCacheKey = () => 'ground-v2';
   return mat;
 }
 

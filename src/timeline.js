@@ -5,7 +5,7 @@ export const END_YEAR = 2050;
 export const PRESENT_YEAR = 2026;
 export const FIRE_WINDOW = [1871.66, 1872.0];   // months are shown in the HUD inside this window
 
-export const ERAS = [
+export const CHICAGO_ERAS = [
   { from: 1800, to: 1833, name: 'Frontier & Fort', color: '#a0794a',
     text: 'Prairie, wetlands and Potawatomi camps around the Chicago portage. Fort Dearborn guards the river mouth, which still bends south behind a sandbar.' },
   { from: 1833, to: 1871, name: 'Boomtown', color: '#b8693a',
@@ -25,7 +25,7 @@ export const ERAS = [
 ];
 
 // y = fractional year. `slow` marks moments worth slowing the playback for.
-export const EVENTS = [
+export const CHICAGO_EVENTS = [
   { y: 1800, t: 'Potawatomi lands; Kinzie trading post on the north bank' },
   { y: 1803, t: 'Fort Dearborn built at the river mouth' },
   { y: 1812.6, t: 'Battle of Fort Dearborn; fort burned', slow: true },
@@ -69,6 +69,14 @@ export const EVENTS = [
   { y: 2050, t: 'Speculative: vertical-forest towers, citywide green roofs' },
 ];
 
+// The active city's eras and events (live bindings: importers see the switch).
+export let ERAS = CHICAGO_ERAS;
+export let EVENTS = CHICAGO_EVENTS;
+export function useTimeline(eras, events) {
+  ERAS = eras;
+  EVENTS = [...events].sort((a, b) => a.y - b.y);
+}
+
 export function eraAt(year) {
   for (const e of ERAS) if (year >= e.from && year < e.to) return e;
   return ERAS[ERAS.length - 1];
@@ -89,4 +97,26 @@ export const window01 = (year, y0, y1, f = 3) => smoothstep(y0 - f, y0, year) * 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export function monthOf(year) {
   return MONTHS[clamp(Math.floor((year - Math.floor(year)) * 12), 0, 11)];
+}
+
+// Fractional-year <-> calendar helpers (365-day years, good enough for a time-lapse)
+const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+export function yearOf(y, month, day, hour = 0, minute = 0, second = 0) {
+  let doy = day - 1;
+  for (let m = 0; m < month - 1; m++) doy += MDAYS[m];
+  return y + (doy + (hour + minute / 60 + second / 3600) / 24) / 365;
+}
+export function calendarOf(year) {
+  const y = Math.floor(year);
+  let rest = (year - y) * 365;
+  let m = 0;
+  while (m < 11 && rest >= MDAYS[m]) { rest -= MDAYS[m]; m++; }
+  const day = Math.floor(rest) + 1;
+  const hours = (rest - Math.floor(rest)) * 24;
+  return { y, month: m + 1, day, hours, monthName: MONTHS[m] };
+}
+export function clockText(hours, withSeconds = false) {
+  const h = Math.floor(hours), m = Math.floor((hours - h) * 60), s = Math.floor(((hours - h) * 60 - m) * 60);
+  const p = (v) => String(v).padStart(2, '0');
+  return withSeconds ? `${p(h)}:${p(m)}:${p(s)}` : `${p(h)}:${p(m)}`;
 }

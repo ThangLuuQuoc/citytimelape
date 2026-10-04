@@ -1,14 +1,15 @@
 // Service worker: makes the time-lapse installable and usable offline.
 // App files: network-first (updates show up immediately), cached copy when offline.
 // three.js from the CDN and Google Fonts: cache-first (they're versioned / immutable).
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `ctl-shell-${VERSION}`;
 const RUNTIME = `ctl-runtime-${VERSION}`;
 
 const SHELL_FILES = [
   './', './index.html', './style.css', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png',
-  ...['main', 'timeline', 'geo', 'geom', 'materials', 'city', 'landmarks', 'nature', 'life', 'waterfront', 'ui', 'touch'].map(f => `./src/${f}.js`),
+  ...['main', 'timeline', 'geo', 'geom', 'materials', 'city', 'landmarks', 'nature', 'life', 'waterfront', 'ui', 'touch',
+    'cities/chicago', 'cities/nyc/world', 'cities/nyc/geo', 'cities/nyc/lots', 'cities/nyc/water', 'cities/nyc/landmarks', 'cities/nyc/wtc'].map(f => `./src/${f}.js`),
 ];
 const THREE = 'https://cdn.jsdelivr.net/npm/three@0.160.0/';
 const CDN_FILES = [

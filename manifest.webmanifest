@@ -1,7 +1,7 @@
 {
-  "name": "Chicago 1800–2050 Time-lapse",
-  "short_name": "Chicago TL",
-  "description": "Interactive 3D time-lapse of Chicago's river mouth and lakefront from Fort Dearborn to 2050.",
+  "name": "City Time-lapse 1800–2050: Chicago & New York",
+  "short_name": "City TL",
+  "description": "Interactive 3D time-lapses of Chicago and New York from 1800 to 2050.",
   "id": "./",
   "start_url": "./?source=pwa",
   "scope": "./",

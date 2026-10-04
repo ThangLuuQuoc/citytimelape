@@ -207,8 +207,13 @@ export function vegetation(x, z) {
 // ---------- GPU data textures ----------
 export const REGION = { minX: -12000, maxX: 4000, minZ: -10000, maxZ: 10000 };
 
-export function buildLandTexture(size = 512) {
-  const { minX, maxX, minZ, maxZ } = REGION;
+// src lets another city supply its own land use (defaults to Chicago)
+export const CHICAGO_LAND = {
+  region: REGION, settle: settleYear, park: parkYear, rail: railyardAt, veg: vegetation,
+  burn: (x, z) => (inBurnZone(x, z) ? fireTime(x, z) : 0),
+};
+export function buildLandTexture(size = 512, src = CHICAGO_LAND) {
+  const { minX, maxX, minZ, maxZ } = src.region;
   const data = new Uint16Array(size * size * 4);
   const h = THREE.DataUtils.toHalfFloat;
   for (let j = 0; j < size; j++) {
@@ -216,14 +221,14 @@ export function buildLandTexture(size = 512) {
     for (let i = 0; i < size; i++) {
       const x = minX + (i + 0.5) / size * (maxX - minX);
       const k = (j * size + i) * 4;
-      const sy = settleYear(x, z);
-      const py = parkYear(x, z);
-      const ry = railyardAt(x, z);
+      const sy = src.settle(x, z);
+      const py = src.park(x, z);
+      const ry = src.rail(x, z);
       data[k] = h(Math.min(sy, 3000));
       data[k + 1] = h(py === Infinity ? 0 : py);
-      data[k + 2] = h(inBurnZone(x, z) ? fireTime(x, z) : 0);
+      data[k + 2] = h(src.burn(x, z));
       // vegetation in [0,1]; railyard flag encoded as +2 during its years (decoded in shader)
-      data[k + 3] = h(vegetation(x, z) + (ry ? 2 + (ry.to - 1800) / 1000 : 0));
+      data[k + 3] = h(src.veg(x, z) + (ry ? 2 + (ry.to - 1800) / 1000 : 0));
     }
   }
   const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.HalfFloatType);

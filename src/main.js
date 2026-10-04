@@ -1,3 +1,5 @@
+// Generic time-lapse engine: renderer, sky, light, haze, camera, post-processing, playback and UI.
+// Everything specific to a city lives in src/cities/* (chosen with ?city=…).
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
@@ -8,28 +10,34 @@ import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 
-import { START_YEAR, END_YEAR, EVENTS, clamp, lerp, ramp, smoothstep, window01 } from './timeline.js';
-import { buildLandTexture, createShoreTexture, updateShoreTexture, s0, FIRE_START, FIRE_SPAN } from './geo.js';
-import { U, createGroundMaterial, createWaterMaterial, makeWaterNormalTexture } from './materials.js';
-import { City } from './city.js';
-import { Landmarks } from './landmarks.js';
-import { Nature } from './nature.js';
-import { Life } from './life.js';
-import { Waterfront } from './waterfront.js';
-import { ribbonGeometry } from './geom.js';
+import { START_YEAR, END_YEAR, EVENTS, clamp, lerp, ramp, smoothstep, useTimeline } from './timeline.js';
+import { U, makeWaterNormalTexture } from './materials.js';
 import { UI } from './ui.js';
 import { bindGestures } from './touch.js';
+
+export const CITIES = {
+  chicago: { name: 'Chicago', load: () => import('./cities/chicago.js') },
+  nyc: { name: 'New York', load: () => import('./cities/nyc/world.js') },
+};
 
 const setStatus = (t) => { const el = document.getElementById('loading-text'); if (el) el.textContent = t; };
 // setTimeout (not rAF) so loading also progresses in a background tab
 const nextFrame = () => new Promise(r => setTimeout(r, 16));
+
+const cityId = (() => {
+  const q = new URLSearchParams(location.search).get('city');
+  if (q && CITIES[q]) return q;
+  try { const s = localStorage.getItem('ctl-city'); if (s && CITIES[s]) return s; } catch { /* storage blocked */ }
+  return 'chicago';
+})();
+try { localStorage.setItem('ctl-city', cityId); } catch { /* storage blocked */ }
 
 // ---------------------------------------------------------------- state
 export const state = {
   year: START_YEAR, playing: false, speed: 6, loop: true, slowEvents: true,
   tod: 10, autoDay: false, season: 'summer',
   labels: true, traffic: true, smoke: true,
-  camMode: 'locked', preset: 'harbor',
+  camMode: 'locked', preset: null, city: cityId,
   shadows: true, bloom: true, trails: false, quality: 'auto',
 };
 (function readHash() {
@@ -40,18 +48,16 @@ export const state = {
   if (h.has('play')) state.playing = h.get('play') === '1';
 })();
 
-export const PRESETS = {
-  harbor:  { name: 'Harbor & river mouth', pos: [1900, 210, -560], target: [-150, 0, -655], fov: 30 },
-  bridges: { name: 'Bridges · low over the river', pos: [330, 48, -560], target: [-430, 0, -655] },
-  wacker:  { name: 'Wacker Dr · South Branch', pos: [-560, 110, -420], target: [-790, 0, 520] },
-  drone:   { name: 'Drone · whole city', pos: [2700, 760, -160], target: [-900, 0, 260] },
-  skydeck: { name: 'Skydeck · looking east', pos: [-705, 470, 470], target: [1500, 0, -700] },
-  north:   { name: 'Gold Coast · looking south', pos: [1100, 420, -6200], target: [-250, 0, -500] },
-  south:   { name: 'Museum Campus · looking north', pos: [1500, 330, 5600], target: [-150, 60, -200] },
-  top:     { name: 'Satellite', pos: [-300, 7600, 1400], target: [-300, 0, 0] },
-};
-
 async function main() {
+  const cityMod = await CITIES[cityId].load();
+  const meta = cityMod.meta;
+  useTimeline(meta.eras, meta.events);
+  const PRESETS = meta.presets;
+  if (!(state.preset in PRESETS)) state.preset = meta.defaultPreset;
+  document.title = meta.title;
+  document.querySelector('.loading-title').innerHTML = `${meta.name} <span>1800 → 2050</span>`;
+  document.querySelector('.kicker').textContent = meta.kicker;
+
   // ------------------------------------------------------------ renderer
   const app = document.getElementById('app');
   const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true, powerPreference: 'high-performance' });
@@ -119,11 +125,10 @@ async function main() {
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 1.5;
   scene.add(sun, sun.target);
-  sun.target.position.set(-400, 0, 0);
+  sun.target.position.set(...meta.sunTarget);
   const hemi = new THREE.HemisphereLight(0xbcd4ff, 0x4a4436, 0.8);
   scene.add(hemi);
   const fireLight = new THREE.PointLight(0xff6a20, 0, 9000, 1.2);
-  fireLight.position.set(-300, 400, 300);
   scene.add(fireLight);
 
   // stars
@@ -138,48 +143,10 @@ async function main() {
   const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false });
   scene.add(new THREE.Points(starGeo, starMat));
 
-  // ------------------------------------------------------------ ground, lake, river
-  setStatus('Surveying the prairie…');
-  await nextFrame();
-  const landTex = buildLandTexture(512);
-  const shoreTex = createShoreTexture();
-  updateShoreTexture(shoreTex, state.year);
-  const groundMat = createGroundMaterial(landTex, shoreTex);
-  // the river and lake are cut out of the ground plane through the stencil buffer (see waterfront.js)
-  groundMat.stencilWrite = true;
-  groundMat.stencilRef = 1;
-  groundMat.stencilFunc = THREE.NotEqualStencilFunc;
-  groundMat.stencilZPass = THREE.KeepStencilOp;
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(90000, 90000).rotateX(-Math.PI / 2), groundMat);
-  ground.receiveShadow = true;
-  scene.add(ground);
-
+  // ------------------------------------------------------------ the city
   const waterNormal = makeWaterNormalTexture();
-  const lakeMat = createWaterMaterial(waterNormal);
-  const riverMat = createWaterMaterial(waterNormal, { color: 0x203a2c });
-  const waterfront = new Waterfront(scene, waterNormal, lakeMat, riverMat);
-
-  // Illinois Central tracks: a trestle in the lake (1852), later inside Grant Park
-  const icMat = new THREE.MeshStandardMaterial({ color: 0x3b342e, roughness: 0.95 });
-  const icPts = [];
-  for (let z = -640; z <= 9000; z += 100) icPts.push([s0(z) + (z < 2400 ? 125 : 110), z]);
-  const icSegs = [
-    { pts: icPts.filter(p => p[1] <= -290), cover: 9999 },
-    { pts: icPts.filter(p => p[1] >= -300 && p[1] <= 200), cover: 2004 },
-    { pts: icPts.filter(p => p[1] >= 190), cover: 9999 },
-  ].map(s => { const m = new THREE.Mesh(ribbonGeometry(s.pts, 40, 0), icMat); m.position.y = 1.9; m.receiveShadow = true; scene.add(m); return { m, cover: s.cover }; });
-
-  // ------------------------------------------------------------ city
-  setStatus('Platting the street grid…');
-  await nextFrame();
-  const landmarks = new Landmarks(scene);
-  const city = new City(scene, landmarks.clears());
-  setStatus('Planting trees…');
-  await nextFrame();
-  const nature = new Nature(scene);
-  setStatus('Starting traffic…');
-  await nextFrame();
-  const life = new Life(scene, waterfront);
+  const world = await cityMod.build({ scene, renderer, setStatus, nextFrame, waterNormal, year0: state.year });
+  const { city, life, landmarks } = world;
 
   // ------------------------------------------------------------ camera
   // the label layer ignores pointer events, so the canvas itself receives mouse and touch input
@@ -194,8 +161,8 @@ async function main() {
   controls.zoomSpeed = 1.2;
   let camTween = null;
   function applyPreset(id, instant = false) {
-    const p = PRESETS[id] || PRESETS.harbor;
-    state.preset = id in PRESETS ? id : 'harbor';
+    const p = PRESETS[id] || PRESETS[meta.defaultPreset];
+    state.preset = id in PRESETS ? id : meta.defaultPreset;
     const to = { pos: new THREE.Vector3(...p.pos), target: new THREE.Vector3(...p.target), fov: p.fov || 40 };
     if (instant) {
       camera.position.copy(to.pos); controls.target.copy(to.target); camera.lookAt(to.target);
@@ -258,11 +225,23 @@ async function main() {
   state.autoQuality = autoQuality;
 
   const ui = new UI(state, {
-    onSeek: y => { state.year = clamp(y, START_YEAR, END_YEAR); },
-    onPreset: id => { state.preset = id; if (state.camMode === 'free') applyPreset(id); else applyPreset(id); },
+    onSeek: (y, tod, cam) => {
+      if (Math.abs(y - state.year) > 1e-4) life.smoke.clear();   // smoke belongs to the moment it was made
+      state.year = clamp(y, START_YEAR, END_YEAR);
+      if (tod != null) { state.tod = tod; state.autoDay = false; }
+      if (cam && PRESETS[cam]) { if (state.camMode !== 'locked') setCamMode('locked'); applyPreset(cam); }
+    },
+    onPreset: id => applyPreset(id),
     onCamMode: m => setCamMode(m),
     onQuality: () => applyQuality(),
-  }, PRESETS);
+    onCity: id => {
+      if (id === cityId) return;
+      const u = new URL(location.href);
+      u.searchParams.set('city', id);
+      u.hash = '';
+      location.href = u.toString();
+    },
+  }, PRESETS, { jumps: meta.jumps, cities: Object.entries(CITIES).map(([id, c]) => ({ id, name: c.name })), city: cityId });
 
   bindGestures(renderer.domElement, {
     mode: () => state.camMode,
@@ -270,7 +249,7 @@ async function main() {
     playing: () => state.playing,
     setPlaying: (v) => { state.playing = v; ui.syncPlay(); },
     togglePlay: () => ui.togglePlay(),
-    seek: (y) => { state.year = clamp(y, START_YEAR, END_YEAR); },
+    seek: (y) => { life.smoke.clear(); state.year = clamp(y, START_YEAR, END_YEAR); },
     free: () => { setCamMode('free'); ui.syncAll(); },
     toast: (t) => ui.toast(t),
   });
@@ -279,7 +258,7 @@ async function main() {
   const sunDir = new THREE.Vector3();
   const fogColor = new THREE.Color();
   const tmpC = new THREE.Color();
-  let lastWorldYear = -1, lastShoreYear = -1, lastSeason = '';
+  let lastWorldYear = -1, lastSeason = '';
   const clock = new THREE.Clock();
   let elapsed = 0;
 
@@ -291,48 +270,32 @@ async function main() {
 
   function updateWorld(year) {
     const season = seasonFor(year);
-    if (season !== lastSeason) { nature.setSeason(season); lastSeason = season; }
+    if (season !== lastSeason) { world.nature?.setSeason(season); lastSeason = season; }
     U.uSnow.value = season === 'winter' ? 0.85 : 0;
     U.uAutumn.value = season === 'autumn' ? 1 : 0;
     U.uYear.value = year;
     U.uGreenRoof.value = ramp(year, 2026, 2058) * 0.7 + ramp(year, 2008, 2020) * 0.05;
     U.uSolar.value = ramp(year, 2015, 2050) * 0.45;
-    if (Math.abs(year - lastShoreYear) > 0.25) {
-      updateShoreTexture(shoreTex, year);
-      lastShoreYear = year;
-    }
-    waterfront.setYear(year);
-    city.update(year);
-    nature.update(year);
-    for (const s of icSegs) s.m.visible = year >= 1852 && year < s.cover;
-    // street lighting by era: gas → incandescent → sodium → LED
-    const gu = groundMat.userData.groundUniforms;
-    gu.uStreetAmt.value = ramp(year, 1850, 1870) * 0.35 + ramp(year, 1905, 1930) * 0.5 + ramp(year, 1955, 1970) * 0.25;
-    const lamp = year < 1910 ? [1.0, 0.72, 0.38] : year < 1958 ? [1.0, 0.82, 0.58] : year < 2016 ? [1.0, 0.55, 0.2] : year < 2035 ? [0.92, 0.94, 1.0] : [0.75, 0.95, 1.0];
-    gu.uStreetLight.value.set(...lamp);
-    const road = year < 1880 ? [0.42, 0.36, 0.27] : year < 1925 ? [0.33, 0.31, 0.28] : [0.2, 0.2, 0.21];
-    gu.uRoadTone.value.set(...road);
-    // water quality: clear → industrial murk → recovery → clean future
-    const murk = ramp(year, 1850, 1880) * (1 - ramp(year, 1975, 2030));
-    riverMat.color.setRGB(lerp(0.08, 0.17, murk), lerp(0.2, 0.17, murk), lerp(0.17, 0.09, murk)).lerp(tmpC.setRGB(0.05, 0.2, 0.23), ramp(year, 2026, 2050));
-    lakeMat.color.setRGB(0.035 + murk * 0.03, 0.12, 0.15 - murk * 0.03);
+    world.setYear(year);
     lastWorldYear = year;
   }
 
-  function updateAtmosphere(year, dt) {
+  function updateAtmosphere(year) {
     const a = (state.tod - 6) / 12 * Math.PI;
     sunDir.set(Math.cos(a), Math.sin(a) * 0.85, Math.sin(a) * 0.35 + 0.12).normalize();
-    const fire = life.fireLevel || 0;
-    const day = smoothstep(-0.06, 0.25, sunDir.y) * (1 - 0.6 * fire);   // smoke pall dims the sun during the fire
+    const atmo = world.atmo(year);
+    const fire = atmo.fire || 0;
+    const clear = atmo.clear || 0;            // "severe clear" skies (e.g. the morning of 9/11)
+    const day = smoothstep(-0.06, 0.25, sunDir.y) * (1 - 0.6 * fire);   // smoke pall dims the sun during a fire
     const night = smoothstep(0.06, -0.12, sunDir.y);
     const dusk = smoothstep(-0.1, 0.05, sunDir.y) * (1 - smoothstep(0.05, 0.3, sunDir.y));
     U.uNight.value = night;
-    const smokeAmt = ramp(year, 1855, 1885) * (1 - ramp(year, 1955, 1990));
+    const smokeAmt = (atmo.smoke || 0) * (1 - clear);
     const future = ramp(year, 2030, 2055);
 
     skyU.sunPosition.value.copy(sunDir);
-    skyU.turbidity.value = lerp(3, 9, smokeAmt) - future * 1.2;
-    skyU.rayleigh.value = lerp(2.4, 3.2, smokeAmt * 0.5) + night * 0.5;
+    skyU.turbidity.value = lerp(3, 9, smokeAmt) - future * 1.2 - clear * 1.4;
+    skyU.rayleigh.value = lerp(2.4, 3.2, smokeAmt * 0.5) + night * 0.5 + clear * 0.4;
     skyU.mieCoefficient.value = lerp(0.004, 0.02, smokeAmt);
     for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG', 'sunPosition']) envSky.material.uniforms[k].value = skyU[k].value;
 
@@ -354,15 +317,13 @@ async function main() {
     const cityGlow = ramp(year, 1880, 1960) * 0.6 + 0.2;
     fogColor.lerp(tmpC.setRGB(0.05 + 0.06 * cityGlow, 0.05 + 0.04 * cityGlow, 0.08 + 0.02 * cityGlow), night);
     fogColor.lerp(tmpC.setRGB(0.32, 0.17, 0.09), fire * 0.85);
+    if (atmo.dust) fogColor.lerp(tmpC.setRGB(0.62, 0.58, 0.5).multiplyScalar(0.4 + 0.6 * day), atmo.dust * 0.8);
     scene.fog.color.copy(fogColor);
     skyU.uHorizon.value.copy(fogColor);
-    scene.fog.density = (0.000108 + 0.00006 * smokeAmt - 0.000014 * future + fire * 0.00005) * (1 - night * 0.2);
+    scene.fog.density = (0.000108 + 0.00006 * smokeAmt - 0.000014 * future + fire * 0.00005 + (atmo.dust || 0) * 0.00035) * (1 - night * 0.2) * (1 - clear * 0.35);
     life.setFog(fogColor, scene.fog.density);
     fireLight.intensity = fire * 2500;
-    if (fire > 0 && city.burning.length) {
-      const b = city.burning[Math.floor(city.burning.length / 2)];
-      fireLight.position.set(b.x, 600, b.z);
-    }
+    if (atmo.firePos) fireLight.position.set(...atmo.firePos);
 
     renderer.toneMappingExposure = 0.5 + night * 0.1;
     bloom.enabled = state.bloom && night > 0.03;   // daytime bloom would smear the HDR sky over everything
@@ -383,13 +344,16 @@ async function main() {
     return { night, day };
   }
 
-  // speed limiter around key events
+  // playback speed limits: the city's special windows (fires, 9/11) and generic "slow" events
   function speedCap(year) {
     if (!state.slowEvents) return Infinity;
-    if (year > FIRE_START - 0.08 && year < FIRE_START + FIRE_SPAN + 0.05) return 0.07;
+    const c = world.speedCap(year);
+    if (c < Infinity) return c;
     for (const e of EVENTS) if (e.slow && year > e.y - 0.6 && year < e.y + (e.dur || 0.8)) return 1.1;
     return Infinity;
   }
+  // never jump over the start of a slowed window when playing fast
+  const gates = () => (state.slowEvents ? [...(world.gates || []), ...EVENTS.filter(e => e.slow).map(e => e.y - 0.6)] : []);
 
   // ------------------------------------------------------------ loop
   // compile every material now (incl. the lite variants) so playback never stalls on a new shader
@@ -399,7 +363,7 @@ async function main() {
   city.setLite(!q.lite); renderer.compile(scene, camera); city.setLite(q.lite);
 
   document.getElementById('loading').classList.add('done');
-  console.info(`[timelapse] ready in ${Math.round(performance.now())} ms · ${city.lots.length} lots · GPU: ${gpuName} → ${autoQuality}`);
+  console.info(`[timelapse] ${meta.name} ready in ${Math.round(performance.now())} ms · ${city.lots.length} lots · GPU: ${gpuName} → ${autoQuality}`);
   updateWorld(state.year);
   let hashTimer = 0, frameNo = 0, shadowDirty = true, lastShadowTod = -1, fpsAcc = 0, fpsFrames = 0;
 
@@ -413,17 +377,21 @@ async function main() {
 
     if (state.playing) {
       const sp = Math.min(state.speed, speedCap(state.year));
-      state.year += sp * dt;
+      let next = state.year + sp * dt;
+      for (const g of gates()) if (state.year < g && next >= g) { next = g; break; }
+      state.year = next;
       if (state.year >= END_YEAR) {
         if (state.loop) state.year = START_YEAR; else { state.year = END_YEAR; state.playing = false; }
       }
     }
-    if (state.autoDay) state.tod = (state.tod + dt * 24 / 40) % 24;
+    const forcedTod = world.todOverride?.(state.year);
+    if (forcedTod != null) state.tod = forcedTod;
+    else if (state.autoDay) state.tod = (state.tod + dt * 24 / 40) % 24;
 
     frameNo++;
-    const yearMoved = Math.abs(state.year - lastWorldYear) > 1e-4;
+    const yearMoved = Math.abs(state.year - lastWorldYear) > 1e-9;
     if (yearMoved) updateWorld(state.year);
-    const { night } = updateAtmosphere(state.year, dt);
+    const { night } = updateAtmosphere(state.year);
     // shadows are re-rendered only when the city or the sun changed
     if (yearMoved) shadowDirty = true;
     if (Math.abs(state.tod - lastShadowTod) > 0.02) { shadowDirty = true; lastShadowTod = state.tod; }
@@ -438,9 +406,7 @@ async function main() {
       else if (fps > 50 && pixelRatio < target) { pixelRatio = Math.min(target, pixelRatio + 0.1); renderer.setPixelRatio(pixelRatio); resize(); }
       state.fps = fps;
     }
-    landmarks.update(state.year, night, state.labels, camera.position);
-    waterfront.update(state.year, dt, life.riverShips);
-    life.update(elapsed, dt, state.year, { night, trafficOn: state.traffic, city, nature, landmarks });
+    world.frame(elapsed, dt, state.year, { night, labels: state.labels, traffic: state.traffic, camera });
     life.smoke.sprites.points.visible = state.smoke;
 
     waterNormal.offset.set(elapsed * 0.004, elapsed * 0.006);
@@ -462,12 +428,12 @@ async function main() {
     if (bloom.enabled || afterimage.enabled) composer.render();
     else renderer.render(scene, camera);
     labelRenderer.render(scene, camera);
-    ui.update(state.year, state.tod);
+    ui.update(state.year, state.tod, world.clock?.(state.year));
 
     hashTimer += dt;
     if (hashTimer > 1) {
       hashTimer = 0;
-      history.replaceState(null, '', `#y=${state.year.toFixed(2)}&tod=${state.tod.toFixed(1)}&cam=${state.preset}`);
+      history.replaceState(null, '', `${location.pathname}${location.search}#y=${state.year.toFixed(5)}&tod=${state.tod.toFixed(2)}&cam=${state.preset}`);
     }
   }
   frame();
@@ -478,7 +444,7 @@ async function main() {
     for (let i = 0; i < n; i++) { step(1 / 60); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); }
     return (performance.now() - t0) / n;
   }
-  window.__timelapse = { bench, state, scene, camera, city, life, landmarks, renderer, waterfront, gpuName, get pixelRatio() { return pixelRatio; } };
+  window.__timelapse = { bench, state, scene, camera, city, life, landmarks, renderer, world, gpuName, get pixelRatio() { return pixelRatio; } };
 }
 
 main().catch(err => {

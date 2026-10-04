@@ -209,12 +209,13 @@ const MAJOR = new Set(['dusable', 'fort1', 'fort2', 'watertower', 'homeins', 'na
   'hancock', 'willis', 'aon', 'millennium', 'trump', 'stregis', 'f-spire', 'f-southloop', 'buckingham', 'field']);
 
 export class Landmarks {
-  constructor(scene) {
-    this.items = LANDMARKS.map(def => {
+  constructor(scene, defs = LANDMARKS) {
+    this.items = defs.map(def => {
       const group = new THREE.Group();
       const kit = new Kit(group);
       def.make(kit);
-      group.position.set(def.x, 0, def.z);
+      group.position.set(def.x, def.y || 0, def.z);
+      if (def.rot) group.rotation.y = def.rot;
       scene.add(group);
       const bb = new THREE.Box3().setFromObject(group);
       const height = bb.max.y;
@@ -256,7 +257,7 @@ export class Landmarks {
         let near = true;
         if (camPos) {
           const d = Math.hypot(camPos.x - def.x, camPos.y - it.height, camPos.z - def.z);
-          near = d < (MAJOR.has(def.id) ? 12000 : 1600);
+          near = d < (def.major || MAJOR.has(def.id) ? 12000 : 1600);
         }
         const show = labelsOn && g > 0.6 && near;
         it.label.visible = show;

@@ -1,7 +1,11 @@
-# Chicago 1800 → 2050 — interactive time-lapse
+# City Time-lapse 1800 → 2050: Chicago & New York
 
-A Three.js scene of Chicago's river mouth and lakefront, from Fort Dearborn (1800) to a speculative 2050 skyline,
-and you control the timeline.
+Interactive Three.js time-lapses of two cities, from 1800 to a speculative 2050. You control the timeline. Pick the city
+from the control bar or in Settings, or open `?city=chicago` / `?city=nyc`.
+
+- **Chicago**: the river mouth and lakefront, from Fort Dearborn to the Great Fire of 1871 and the modern skyline.
+- **New York**: Lower Manhattan, the East River bridges and the harbor. This includes **September 11, 2001**, played in
+  slowed clock time.
 
 ## Run
 
@@ -11,6 +15,19 @@ node server.mjs
 
 Then open http://localhost:5173. No install is needed: three.js loads from jsDelivr through an import map.
 Any static server works, but opening `index.html` as a file does not, because ES modules need http.
+
+## New York and September 11, 2001
+
+Lower Manhattan, Brooklyn, Jersey City and the harbor islands are modelled with real positions on Manhattan's 29°
+street grid. This includes the landfill of Battery Park City (built partly from the WTC excavation), the Brooklyn,
+Williamsburg and Manhattan bridges, the elevated railways, the finger piers, the Statue of Liberty, Ellis Island, and
+skylines from Trinity Church to One World Trade Center.
+
+On **September 11, 2001** the timeline slows to real clock time, shown in the HUD with captions. It slows further around
+each key moment: 08:46 (Flight 11, North Tower), 09:03 (Flight 175, South Tower), 09:59 and 10:28 (the collapses) and
+17:20 (7 WTC). Fire, smoke and the dust cloud are shown as a documentary reconstruction. No people are depicted. The
+timeline continues through Ground Zero, the Memorial (2011), One World Trade Center (2014) and the Tribute in Light on
+anniversary nights. Use the **9/11** jump button, or turn off *Slow at key events* to play through at normal speed.
 
 ## Install as an app (PWA)
 
@@ -76,7 +93,9 @@ The URL hash keeps the year, time of day and camera (`#y=1871.80&tod=21&cam=harb
 
 ## Files
 
-- `src/main.js`: renderer, sky/lighting, camera, post-processing, main loop
+- `src/main.js`: generic engine: renderer, sky/lighting, camera, post-processing, playback, UI wiring
+- `src/cities/chicago.js`, `src/cities/nyc/*`: one adapter per city (eras, events, cameras, geography, lots,
+  landmarks, waterfront, traffic hooks). `nyc/wtc.js` holds the World Trade Center and September 11
 - `src/waterfront.js`: river/lake cut-out, dock walls, bridges, riverside streets, Riverwalk, piers, lighthouse
 - `src/geom.js`: ribbon / wall / box geometry helpers
 - `src/geo.js`: shoreline, rivers, land use, fire zone, GPU data textures

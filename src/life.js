@@ -30,7 +30,7 @@ export class Path {
 }
 
 // write a yaw-rotated, scaled box into an instance array (box is unit, centered)
-function putYaw(a, i, x, y, z, dx, dz, sx, sy, sz) {
+export function putYaw(a, i, x, y, z, dx, dz, sx, sy, sz) {
   const o = i * 16;
   a[o] = dx * sx; a[o + 1] = 0; a[o + 2] = dz * sx; a[o + 3] = 0;
   a[o + 4] = 0; a[o + 5] = sy; a[o + 6] = 0; a[o + 7] = 0;
@@ -121,13 +121,14 @@ export class Sprites {
 }
 
 // Simulated particles (smoke) with age and drift
-class Smoke {
+export class Smoke {
   constructor(capacity) {
     this.cap = capacity;
     this.p = new Float32Array(capacity * 12); // x y z vx vy vz age life s0 s1 shade alpha
     this.next = 0;
     this.sprites = new Sprites(capacity, false);
   }
+  clear() { for (let i = 0; i < this.cap; i++) this.p[i * 12 + 7] = 0; }
   emit(x, y, z, vx, vy, vz, life, s0, s1, shade, alpha) {
     const o = this.next * 12;
     this.next = (this.next + 1) % this.cap;
@@ -155,13 +156,15 @@ class Smoke {
 const CAR_COLORS = [0x1c1c1c, 0x8a1c1c, 0x2c3e66, 0xd8d8d8, 0x6b6b6b, 0x1f4d2f, 0xbfa36a, 0x4a4a52, 0xe0e0e0, 0x8c8c94];
 
 export class Life {
-  constructor(scene, waterfront) {
+  // `opts` lets another city replace the Chicago-specific hooks (see chicagoHooks at the bottom)
+  constructor(scene, waterfront, opts = {}) {
     this.scene = scene;
     this.wf = waterfront;
+    this.cfg = { ...chicagoHooks(this), ...opts };
     this.riverShips = [];
     this.rand = mulberry32(99);
     this.glow = new Sprites(14000, true);
-    this.smoke = new Smoke(5000);
+    this.smoke = new Smoke(this.cfg.smokeCap || 5000);
     scene.add(this.glow.points, this.smoke.sprites.points);
     this.tmp = {};
     this.buildRoads(scene);
@@ -175,44 +178,22 @@ export class Life {
   // ---------- roads, expressways, Lake Shore Drive ----------
   buildRoads(scene) {
     const lanes = [];
-    const street = (pts, year, o = {}) => lanes.push({ path: new Path(pts, 0.45), year, kind: 'street', art: 1, core: !!o.core, to: o.to ?? 9999 });
-    const hwy = (pts, year) => lanes.push({ path: new Path(pts, 0.9), year, kind: 'hwy', to: 9999 });
-    for (let k = -11; k <= 0; k++) street([[k * 804.67, -8000], [k * 804.67, 8000]], 1835);
-    for (let k = -10; k <= 10; k++) street([[-9500, k * 804.67], [Math.min(s0(k * 804.67) - 40, 200), k * 804.67]], 1835);
-    // downtown streets that cross the river on the movable bridges
-    for (const x of [-603, -402, -281, -201, -72, 0, 100.6]) street([[x, -1700], [x, 2400]], 1836, { core: true });
-    street([[201.2, -3300], [201.2, 2400]], 1836, { core: true });            // Michigan Ave (Pine St)
-    street([[150, -1500], [150, -480]], 1856, { core: true, to: 1920 });      // Rush St
-    street([[402, -1000], [402, 2400]], 1982, { core: true });                // Columbus Dr
-    for (const z of [-402, -301, -201, 0, 201, 402, 603, 804, 1005, 1207]) street([[-1600, z], [201, z]], 1836, { core: true });
-    // riverside streets
-    for (const r of this.wf.roads) street(r.pts, r.from, { core: true });
-    // Lake Shore Drive follows the filled-in lakefront
-    const lsd = [];
-    for (let z = -8000; z <= 8000; z += 200) {
-      let x = shoreX(z, 1945) - 110;
-      if (z > -900 && z < -400) x = shoreX(-640, 1945) - 230;
-      lsd.push([x, z]);
-    }
-    hwy(lsd, 1937);
-    const kennedy = [[-820, -150], [-1100, -1000], [-1500, -2200], [-2500, -4300], [-4200, -8000]];
-    const ryan = [[-1250, 1005], [-1250, 4000], [-1300, 8000]];
-    const ike = [[-800, 1005], [-9500, 1005]];
-    const steven = [[-1250, 3300], [-3000, 3900], [-6000, 4700], [-9500, 5400]];
-    hwy(ike, 1955); hwy(kennedy, 1960); hwy(ryan, 1962); hwy(steven, 1964);
+    const street = (pts, year, o = {}) => lanes.push({ path: new Path(pts, o.y ?? 0.45), year, kind: 'street', art: 1, core: !!o.core, to: o.to ?? 9999 });
+    const hwy = (pts, year, o = {}) => lanes.push({ path: new Path(pts, o.y ?? 0.9), year, kind: 'hwy', to: o.to ?? 9999 });
+    const ribbons = this.cfg.buildLanes(street, hwy);
     this.lanes = lanes;
     const bridges = this.wf.bridges;
     const q = {};
     for (const l of lanes) {
       // settlement sampled every 60 m so vehicles only drive through built-up areas
       l.settle = [];
-      for (let u = 0; u <= l.path.len; u += 60) { l.path.at(u, q); l.settle.push(settleYear(q.x, q.z)); }
+      for (let u = 0; u <= l.path.len; u += 60) { l.path.at(u, q); l.settle.push(this.cfg.settleAt(q.x, q.z)); }
       // every 6 m: -1 land, -2 open water, >=0 index of the bridge carrying the street
       const n = Math.ceil(l.path.len / 6) + 1;
       l.cross = new Int16Array(n).fill(-1);
       for (let i = 0; i < n; i++) {
         l.path.at(Math.min(i * 6, l.path.len - 0.01), q);
-        if (distToRiver(q.x, q.z, 40) < 34) {
+        if (this.cfg.waterAt(q.x, q.z)) {
           const bi = bridges.findIndex(b => b.contains(q.x, q.z));
           l.cross[i] = bi >= 0 ? bi : -2;
         }
@@ -222,14 +203,16 @@ export class Life {
     // ribbons for the big roads
     const roadMat = new THREE.MeshStandardMaterial({ color: 0x3a3b3d, roughness: 0.9 });
     this.highways = [];
-    const ribbon = (pts, w, year) => {
-      const m = new THREE.Mesh(ribbonGeometry(pts, w, 0.5), roadMat);
+    const ribbon = (pts, w, year, y, to) => {
+      const m = new THREE.Mesh(ribbonGeometry(pts, w, y ?? this.cfg.roadY ?? 0.5, y > 2 ? 1.2 : 0), roadMat);
       m.receiveShadow = true;
+      m.castShadow = y > 2;
       m.userData.year = year;
+      m.userData.to = to ?? 9999;
       scene.add(m);
       this.highways.push(m);
     };
-    ribbon(lsd, 34, 1937); ribbon(ike, 46, 1955); ribbon(kennedy, 46, 1960); ribbon(ryan, 52, 1962); ribbon(steven, 40, 1964);
+    for (const r of ribbons) ribbon(r.pts, r.w, r.year, r.y, r.to);
   }
 
   buildVehicles(scene) {
@@ -267,13 +250,7 @@ export class Life {
 
   // ---------- the "L" and, later, a lakefront maglev ----------
   buildTrains(scene) {
-    const lines = [
-      { pts: [[-402, -402], [100, -402], [100, 804], [-402, 804], [-402, -402]], year: 1897, loop: true, n: 7 },
-      { pts: [[100, 804], [100, 1150], [50, 1400], [50, 8000]], year: 1892, n: 4 },
-      { pts: [[-402, -402], [-9000, -402]], year: 1893, n: 4 },
-      { pts: [[-402, 804], [-9000, 804]], year: 1895, n: 3 },
-      { pts: [[-402, -402], [-402, -1300], [-300, -2000], [-600, -4000], [-900, -8000]], year: 1900, n: 4 },
-    ];
+    const lines = this.cfg.trainLines;
     const structMat = styleMaterial('steel');
     this.trainLines = lines.map(l => {
       const path = new Path(l.pts, 9);
@@ -294,10 +271,8 @@ export class Life {
       for (let i = 0; i < l.n; i++) trains.push({ u: (i / l.n) * path.len, dir: l.loop ? 1 : (i % 2 ? 1 : -1), speed: 14 });
       return { ...l, path, group: g, trains };
     });
-    const maglevPts = [[1600, -1110], [1150, -900], [1000, -500], [990, 300], [1000, 1500], [1150, 2400], [1050, 3300], [1250, 5000], [1450, 8000]];
-    const maglevW = [[-800, 1005], [-9500, 1005]];
     const tubeMat = new THREE.MeshStandardMaterial({ color: 0xe8f4f4, emissive: 0x66ffee, emissiveIntensity: 0, transparent: true, opacity: 0.55, roughness: 0.2 });
-    this.maglev = [maglevPts, maglevW].map(pts => {
+    this.maglev = this.cfg.maglev.map(pts => {
       const path = new Path(pts, 32);
       const curve = new THREE.CatmullRomCurve3(path.pts);
       const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 200, 3.2, 8), tubeMat);
@@ -325,13 +300,12 @@ export class Life {
   buildShips(scene) {
     const r = this.rand;
     this.ships = [];
-    for (let i = 0; i < 80; i++) {
-      const river = i < 22;
+    for (let i = 0; i < this.cfg.shipCount; i++) {
+      const river = i < this.cfg.riverShipCount;
       this.ships.push({ river, k: r(), k2: r(), k3: r(), u: r(), speed: river ? 1.5 + r() * 1.5 : 4 + r() * 6,
         z: -3500 + r() * 7000, x: 1700 + r() * 4500, ang: r() * Math.PI * 2, dir: r() < 0.5 ? 1 : -1 });
     }
-    this.moored = [];
-    for (let i = 0; i < 260; i++) this.moored.push({ x: 1110 + (i % 13) * 26 + r() * 4, z: -180 + Math.floor(i / 13) * 48 + r() * 6, k: r() });
+    this.moored = this.cfg.marina(r);
     const hull = new THREE.MeshStandardMaterial({ roughness: 0.85, envMapIntensity: 0.25 });
     const hullGeo = mergeGeometries([box(1, 1, 1), box(0.28, 0.9, 0.62, -0.18, 1, 0), box(0.16, 0.5, 0.5, 0.36, 0.55, 0)]);
     this.hMesh = new THREE.InstancedMesh(hullGeo, hull, this.ships.length + this.moored.length + this.wf.moorings.length);
@@ -341,14 +315,13 @@ export class Life {
     this.sMesh = new THREE.InstancedMesh(new THREE.ConeGeometry(0.5, 1, 3).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0xf2efe6, roughness: 0.8, side: THREE.DoubleSide }), (this.ships.length + this.moored.length + this.wf.moorings.length) * 2);
     this.sMesh.frustumCulled = false;
     scene.add(this.hMesh, this.sMesh);
-    this.riverPaths = { main: null, north: new Path(NORTH_BRANCH.slice(0, 6), 1.2), south: new Path(SOUTH_BRANCH.slice(0, 7), 1.2) };
   }
 
   // ---------- air taxis / drones ----------
   buildSky(scene) {
     const r = this.rand;
     this.flyers = Array.from({ length: 160 }, () => ({
-      cx: -1500 + r() * 3000, cz: -2500 + r() * 5000, rx: 300 + r() * 1500, rz: 300 + r() * 1500,
+      cx: this.cfg.flyArea[0] + r() * this.cfg.flyArea[2], cz: this.cfg.flyArea[1] + r() * this.cfg.flyArea[3], rx: 300 + r() * 1500, rz: 300 + r() * 1500,
       y: 140 + r() * 320, w: (0.02 + r() * 0.04) * (r() < 0.5 ? 1 : -1), ph: r() * 6.28, k: r(),
     }));
     this.fMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), styleMaterial('white'), this.flyers.length);
@@ -360,13 +333,10 @@ export class Life {
   buildTurbines(scene) {
     const r = this.rand;
     this.turbines = [];
-    for (let i = 0; i < 44; i++) {
-      const north = i % 2 === 0;
-      this.turbines.push({ x: 2600 + r() * 4200, z: north ? -4300 - r() * 4500 : 4600 + r() * 4500, from: 2035 + r() * 14, ph: r() * 6.28, sp: 0.6 + r() * 0.3 });
-    }
+    for (const [x, z] of this.cfg.turbineSpots(r)) this.turbines.push({ x, z, from: 2035 + r() * 14, ph: r() * 6.28, sp: 0.6 + r() * 0.3 });
     const white = styleMaterial('white');
-    this.towerMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(2, 3.5, 1, 10).translate(0, 0.5, 0), white, this.turbines.length);
-    this.bladeMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), white, this.turbines.length * 3);
+    this.towerMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(2, 3.5, 1, 10).translate(0, 0.5, 0), white, Math.max(1, this.turbines.length));
+    this.bladeMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), white, Math.max(3, this.turbines.length * 3));
     this.towerMesh.frustumCulled = this.bladeMesh.frustumCulled = false;
     scene.add(this.towerMesh, this.bladeMesh);
   }
@@ -379,7 +349,7 @@ export class Life {
     const p = this.tmp;
 
     // highways appear
-    for (const h of this.highways) h.visible = year >= h.userData.year;
+    for (const h of this.highways) h.visible = year >= h.userData.year && year < h.userData.to;
 
     // ----- road vehicles -----
     const VM = this.vMeshes, cnt = { car: 0, cart: 0, long: 0 };
@@ -444,7 +414,7 @@ export class Life {
       bl.length = 0;
     }
     const bc = this.wf.beacon;
-    if (bc && night > 0.05) glow.push(bc.x, bc.y, bc.z, 1, 0.92, 0.6, 26, night * (0.4 + 0.6 * Math.max(0, Math.sin(t * 2.2))));
+    if (bc && night > 0.05) glow.push(bc.x, bc.y, bc.z, 1, 0.92, 0.6, bc.steady ? 14 : 26, night * (bc.steady ? 1.4 : 0.4 + 0.6 * Math.max(0, Math.sin(t * 2.2))));
 
     // ----- elevated trains -----
     const ta = this.tMesh.instanceMatrix.array;
@@ -453,7 +423,7 @@ export class Life {
     this.trainMat.color.setRGB(...trainCol);
     this.trainMat.emissiveIntensity = night * 0.6;
     for (const l of this.trainLines) {
-      const on = year >= l.year;
+      const on = year >= l.year && year < (l.to ?? 9999);
       l.group.visible = on;
       if (!on) continue;
       const grow = ramp(year, l.year, l.year + 0.5);
@@ -562,6 +532,7 @@ export class Life {
     for (const e of this.steamSmoke) if (Math.random() < dt * 5) this.smoke.emit(e[0], e[1], e[2], 0, 3, 0, 16, 4, 40, 0.25, 0.6);
     this.smoke.update(dt, WIND, SMOKE_TINT.setRGB(1, 1, 1).lerp(FIRE_TINT, this.fireLevel));
 
+    env.extra?.();          // city-specific effects (e.g. the WTC fires) add sprites here
     glow.end();
   }
 
@@ -571,8 +542,7 @@ export class Life {
     const p = this.tmp;
     this.steamSmoke = [];
     this.riverShips.length = 0;
-    const main = new Path(mainBranch(year).slice(0, -1), 1.2);
-    const mouthX = shoreX(-640, year);
+    this.cfg.beginShips?.(year);
     const busy = ramp(year, 1835, 1860);
     const Y = WATER_Y;
     const draw = (type, x, z, dx, dz) => {
@@ -586,6 +556,8 @@ export class Life {
         case 'tour': L = 26; W = 7; H = 2.6; c = [0.88, 0.88, 0.85]; break;
         case 'sail': L = 11; W = 3.5; H = 1.4; c = [0.92, 0.92, 0.9]; sail = 14; break;
         case 'ferry': L = 40; W = 12; H = 4; c = [0.9, 0.95, 0.97]; break;
+        case 'siferry': L = 94; W = 21; H = 8; c = [0.95, 0.45, 0.12]; break;   // Staten Island Ferry orange
+        case 'liner': L = 260; W = 30; H = 16; c = [0.1, 0.1, 0.12]; this.steamSmoke.push([x, Y + 40, z]); break;
       }
       putYaw(ha, nh, x, Y - 0.6, z, dx, dz, L, H, W);
       hc.set(c, nh * 3);
@@ -598,54 +570,33 @@ export class Life {
       return sail > 0 || type === 'steamer';
     };
     for (const s of this.ships) {
-      // pick type for this era
+      // pick type for this era (a city can override with cfg.shipType)
       let type;
-      if (year < 1835) type = s.k < 0.6 ? 'canoe' : null;
+      if (this.cfg.shipType) type = this.cfg.shipType(s, year, busy);
+      else if (year < 1835) type = s.k < 0.6 ? 'canoe' : null;
       else if (year < 1960) type = s.k2 < (year < 1880 ? 0.75 : year < 1915 ? 0.35 : 0.05) ? 'schooner' : 'steamer';
       else if (year < 2035) type = s.river ? (s.k2 < 0.6 ? 'tour' : 'sail') : (s.k2 < 0.25 ? 'freighter' : 'sail');
       else type = s.k2 < 0.35 ? 'ferry' : 'sail';
-      if (type === null) continue;
-      if (year >= 1835 && s.k > 0.25 + 0.75 * busy) continue;
-      if (year > 1960 && year < 2035 && s.k > 0.55) continue;
-      if (s.river && type === 'steamer' && year > 1930) type = 'barge';
-      let x, z, dx, dz;
-      if (s.river) {
-        const path = s.k3 < 0.45 ? main : s.k3 < 0.7 ? this.riverPaths.north : this.riverPaths.south;
-        s.u += dt * s.speed * s.dir * 0.004;
-        path.at(s.u * path.len, p);
-        const side = (s.k2 - 0.5) * 18;
-        x = p.x - p.dz * side; z = p.z + p.dx * side; dx = p.dx * s.dir; dz = p.dz * s.dir;
-      } else {
-        if (type === 'canoe') { s.x = Math.max(s.x, s0(s.z) + 60); }
-        s.ang += dt * 0.02 * s.dir;
-        dx = Math.cos(s.ang); dz = Math.sin(s.ang);
-        s.x += dx * s.speed * dt * 3; s.z += dz * s.speed * dt * 3;
-        const minX = shoreX(s.z, year) + 120;
-        if (s.x < minX) { s.x = minX; s.ang = Math.PI - s.ang; }
-        if (s.x > 7000 || Math.abs(s.z) > 6000) { s.x = mouthX + 200; s.z = -640 + (s.k - 0.5) * 400; }
-        x = s.x; z = s.z;
+      if (!type) continue;
+      if (!this.cfg.shipType) {
+        if (year >= 1835 && s.k > 0.25 + 0.75 * busy) continue;
+        if (year > 1960 && year < 2035 && s.k > 0.55) continue;
       }
+      if (s.river && type === 'steamer' && year > 1930) type = 'barge';
+      const pos = this.cfg.moveShip(s, type, year, dt, p);
+      if (!pos) continue;
+      const { x, z, dx, dz } = pos;
       const tall = draw(type, x, z, dx, dz);
       if (s.river) this.riverShips.push({ x, z, tall });
     }
     // vessels tied up along the dock walls, at Navy Pier and along the Riverwalk
-    const wharfEra = ramp(year, 1835, 1852) * (1 - ramp(year, 1915, 1940));
-    const riverEnd = mouthX + 10;
     for (const m of this.wf.moorings) {
-      let type = null;
-      if (m.where === 'river') {
-        if (m.x > riverEnd || year < 1835) continue;
-        if (m.k < wharfEra * 0.8) type = year < 1880 || m.k < 0.25 ? 'schooner' : 'steamer';
-        else if (year >= 1935 && year < 1995 && m.k > 0.93) type = 'barge';
-      } else if (m.where === 'pier') {
-        if (year >= 1916 && year < 1960 && m.k < 0.6) type = 'steamer';
-        else if (year >= 1995 && m.k < 0.35) type = 'tour';
-      } else if (year >= 2010 && m.k < 0.7) type = 'tour';
+      const type = this.cfg.mooringType(m, year);
       if (type) draw(type, m.x, m.z, m.dx, m.dz);
     }
-    // Monroe Harbor moorings
-    if (year > 1932) {
-      const fill = ramp(year, 1932, 1960);
+    // marina moorings (Monroe Harbor in Chicago)
+    if (year > this.cfg.marinaFrom) {
+      const fill = ramp(year, this.cfg.marinaFrom, this.cfg.marinaFrom + 28);
       for (const m of this.moored) {
         if (m.k > fill) continue;
         putYaw(ha, nh, m.x, Y - 0.6, m.z, 0, 1, 10, 1.3, 3.2);
@@ -673,3 +624,101 @@ const WIND = { x: 7, z: 2.5 };
 const SMOKE_TINT = new THREE.Color();
 const FIRE_TINT = new THREE.Color(1.6, 0.8, 0.4);
 
+
+// ---------------- Chicago hooks (defaults) ----------------
+function chicagoHooks(life) {
+  const wf = life.wf;
+  const riverPaths = { north: new Path(NORTH_BRANCH.slice(0, 6), 1.2), south: new Path(SOUTH_BRANCH.slice(0, 7), 1.2) };
+  let main = null, mouthX = 0;
+  return {
+    settleAt: settleYear,
+    waterAt: (x, z) => distToRiver(x, z, 40) < 34,
+    buildLanes(street, hwy) {
+      for (let k = -11; k <= 0; k++) street([[k * 804.67, -8000], [k * 804.67, 8000]], 1835);
+      for (let k = -10; k <= 10; k++) street([[-9500, k * 804.67], [Math.min(s0(k * 804.67) - 40, 200), k * 804.67]], 1835);
+      // downtown streets that cross the river on the movable bridges
+      for (const x of [-603, -402, -281, -201, -72, 0, 100.6]) street([[x, -1700], [x, 2400]], 1836, { core: true });
+      street([[201.2, -3300], [201.2, 2400]], 1836, { core: true });            // Michigan Ave (Pine St)
+      street([[150, -1500], [150, -480]], 1856, { core: true, to: 1920 });      // Rush St
+      street([[402, -1000], [402, 2400]], 1982, { core: true });                // Columbus Dr
+      for (const z of [-402, -301, -201, 0, 201, 402, 603, 804, 1005, 1207]) street([[-1600, z], [201, z]], 1836, { core: true });
+      for (const r of wf.roads) street(r.pts, r.from, { core: true });         // riverside streets
+      // Lake Shore Drive follows the filled-in lakefront
+      const lsd = [];
+      for (let z = -8000; z <= 8000; z += 200) {
+        let x = shoreX(z, 1945) - 110;
+        if (z > -900 && z < -400) x = shoreX(-640, 1945) - 230;
+        lsd.push([x, z]);
+      }
+      const kennedy = [[-820, -150], [-1100, -1000], [-1500, -2200], [-2500, -4300], [-4200, -8000]];
+      const ryan = [[-1250, 1005], [-1250, 4000], [-1300, 8000]];
+      const ike = [[-800, 1005], [-9500, 1005]];
+      const steven = [[-1250, 3300], [-3000, 3900], [-6000, 4700], [-9500, 5400]];
+      hwy(lsd, 1937); hwy(ike, 1955); hwy(kennedy, 1960); hwy(ryan, 1962); hwy(steven, 1964);
+      return [{ pts: lsd, w: 34, year: 1937 }, { pts: ike, w: 46, year: 1955 }, { pts: kennedy, w: 46, year: 1960 }, { pts: ryan, w: 52, year: 1962 }, { pts: steven, w: 40, year: 1964 }];
+    },
+    trainLines: [
+      { pts: [[-402, -402], [100, -402], [100, 804], [-402, 804], [-402, -402]], year: 1897, loop: true, n: 7 },
+      { pts: [[100, 804], [100, 1150], [50, 1400], [50, 8000]], year: 1892, n: 4 },
+      { pts: [[-402, -402], [-9000, -402]], year: 1893, n: 4 },
+      { pts: [[-402, 804], [-9000, 804]], year: 1895, n: 3 },
+      { pts: [[-402, -402], [-402, -1300], [-300, -2000], [-600, -4000], [-900, -8000]], year: 1900, n: 4 },
+    ],
+    maglev: [
+      [[1600, -1110], [1150, -900], [1000, -500], [990, 300], [1000, 1500], [1150, 2400], [1050, 3300], [1250, 5000], [1450, 8000]],
+      [[-800, 1005], [-9500, 1005]],
+    ],
+    shipCount: 80,
+    riverShipCount: 22,
+    marina(r) {
+      const list = [];
+      for (let i = 0; i < 260; i++) list.push({ x: 1110 + (i % 13) * 26 + r() * 4, z: -180 + Math.floor(i / 13) * 48 + r() * 6, k: r() });
+      return list;
+    },
+    marinaFrom: 1932,
+    flyArea: [-1500, -2500, 3000, 5000],
+    turbineSpots(r) {
+      const out = [];
+      for (let i = 0; i < 44; i++) out.push([2600 + r() * 4200, i % 2 === 0 ? -4300 - r() * 4500 : 4600 + r() * 4500]);
+      return out;
+    },
+    beginShips(year) {
+      main = new Path(mainBranch(year).slice(0, -1), 1.2);
+      mouthX = shoreX(-640, year);
+    },
+    // river boats follow the branches; lake boats roam and bounce off the shore
+    moveShip(s, type, year, dt, p) {
+      if (s.river) {
+        const path = s.k3 < 0.45 ? main : s.k3 < 0.7 ? riverPaths.north : riverPaths.south;
+        s.u += dt * s.speed * s.dir * 0.004;
+        path.at(s.u * path.len, p);
+        const side = (s.k2 - 0.5) * 18;
+        return { x: p.x - p.dz * side, z: p.z + p.dx * side, dx: p.dx * s.dir, dz: p.dz * s.dir };
+      }
+      if (type === 'canoe') s.x = Math.max(s.x, s0(s.z) + 60);
+      s.ang += dt * 0.02 * s.dir;
+      const dx = Math.cos(s.ang), dz = Math.sin(s.ang);
+      s.x += dx * s.speed * dt * 3; s.z += dz * s.speed * dt * 3;
+      const minX = shoreX(s.z, year) + 120;
+      if (s.x < minX) { s.x = minX; s.ang = Math.PI - s.ang; }
+      if (s.x > 7000 || Math.abs(s.z) > 6000) { s.x = mouthX + 200; s.z = -640 + (s.k - 0.5) * 400; }
+      return { x: s.x, z: s.z, dx, dz };
+    },
+    // vessels tied up along the dock walls, at Navy Pier and along the Riverwalk
+    mooringType(m, year) {
+      const wharfEra = ramp(year, 1835, 1852) * (1 - ramp(year, 1915, 1940));
+      if (m.where === 'river') {
+        if (m.x > mouthX + 10 || year < 1835) return null;
+        if (m.k < wharfEra * 0.8) return year < 1880 || m.k < 0.25 ? 'schooner' : 'steamer';
+        if (year >= 1935 && year < 1995 && m.k > 0.93) return 'barge';
+        return null;
+      }
+      if (m.where === 'pier') {
+        if (year >= 1916 && year < 1960 && m.k < 0.6) return 'steamer';
+        if (year >= 1995 && m.k < 0.35) return 'tour';
+        return null;
+      }
+      return year >= 2010 && m.k < 0.7 ? 'tour' : null;
+    },
+  };
+}

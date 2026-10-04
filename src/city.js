@@ -30,10 +30,11 @@ function zoneOf(x, z) {
 }
 
 export class City {
-  constructor(scene, landmarkClears = []) {
+  // opts.generate(city) may return another city's lots (same lot format, optional lot.rot)
+  constructor(scene, landmarkClears = [], opts = {}) {
     this.lots = [];
     this.clears = landmarkClears;
-    this.generate();
+    if (opts.generate) this.lots = opts.generate(this); else this.generate();
     this.buildMeshes(scene);
     this.lastYear = -1;
     this.stackEmitters = [];   // [x, y, z] smokestack tops, refreshed by update()
@@ -243,9 +244,10 @@ export class City {
         const fw = l.w * p.fp, fd = l.d * p.fp;
         const x = l.x + l.ox * (l.w - fw) * 0.5, z = l.z + l.oz * (l.d - fd) * 0.5;
         const a = per[p.st];
-        a.box.push(x, z, fw, fd); a.time.push(p.t, end, p.build, demo); a.shape.push(p.h, 0, 1, 0);
+        const rot = l.rot || 0;
+        a.box.push(x, z, fw, fd); a.time.push(p.t, end, p.build, demo); a.shape.push(p.h, 0, 1, rot);
         const crown = p.crown || p.h > 140;
-        if (crown) { a.box.push(x, z, fw, fd); a.time.push(p.t, end, p.build, demo); a.shape.push(p.h, p.crown ? 0.16 : 0.1, 0.62, 0); }
+        if (crown) { a.box.push(x, z, fw, fd); a.time.push(p.t, end, p.build, demo); a.shape.push(p.h, p.crown ? 0.16 : 0.1, 0.62, rot); }
         const top = p.h * (crown ? (p.crown ? 1.16 : 1.1) : 1);
         if (p.h > 150) this.tallList.push({ x, z, y: top + 2, t0: p.t + p.build, t1: end - demo });
         if (p.stack) {

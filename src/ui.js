@@ -1,14 +1,15 @@
 // DOM controls: timeline scrubber, playback, camera, settings and keyboard shortcuts.
-import { ERAS, EVENTS, START_YEAR, END_YEAR, PRESENT_YEAR, eraAt, clamp, monthOf, FIRE_WINDOW } from './timeline.js';
+import { ERAS, EVENTS, START_YEAR, END_YEAR, PRESENT_YEAR, eraAt, clamp } from './timeline.js';
 
 const $ = id => document.getElementById(id);
 const span = END_YEAR - START_YEAR;
 const pct = y => ((y - START_YEAR) / span) * 100;
 
-const JUMPS = [[1800, '1800'], [1833, 'Harbor'], [1860, 'Wharves'], [1871.69, 'Fire'], [1905, 'Bascules'], [1930, 'Deco'], [1973, 'Sears'], [2016, 'Riverwalk'], [PRESENT_YEAR, 'Today'], [2050, '2050']];
 
 export class UI {
-  constructor(state, cb, presets) {
+  // opts: { jumps: [[year, label, tod?]], cities: [{id, name}], city }
+  constructor(state, cb, presets, opts = {}) {
+    this.opts = opts;
     this.s = state;
     this.cb = cb;
     this.presets = presets;
@@ -44,7 +45,7 @@ export class UI {
       t.addEventListener('pointerenter', e => { tip.hidden = false; tip.innerHTML = `<b>${Math.floor(ev.y)}</b>${ev.t}`; place(e); });
       t.addEventListener('pointermove', place);
       t.addEventListener('pointerleave', () => { tip.hidden = true; });
-      t.addEventListener('pointerdown', e => { e.stopPropagation(); this.seek(ev.y - (ev.y === 1871.77 ? 0.08 : 0.4)); });
+      t.addEventListener('pointerdown', e => { e.stopPropagation(); this.seek(ev.y - (ev.lead ?? 0.4), ev.tod, ev.cam); });
       ticks.appendChild(t);
     }
     function place(e) {
@@ -75,17 +76,17 @@ export class UI {
     tl.addEventListener('pointercancel', up);
 
     const jumps = $('jumps');
-    for (const [y, name] of JUMPS) {
+    for (const [y, name, tod, cam] of this.opts.jumps || []) {
       const b = document.createElement('button');
       b.textContent = name;
       b.title = `Jump to ${Math.floor(y)}`;
-      b.onclick = () => this.seek(y);
+      b.onclick = () => { this.seek(y, tod, cam); this.syncAll(); };
       jumps.appendChild(b);
     }
   }
 
-  seek(y) {
-    this.cb.onSeek(y);
+  seek(y, tod, cam) {
+    this.cb.onSeek(y, tod, cam);
   }
 
   // ---------------- buttons & settings ----------------
@@ -115,6 +116,19 @@ export class UI {
         s[key] = el.checked;
         if (key === 'trails' && el.checked && s.camMode !== 'locked') { this.cb.onCamMode('locked'); this.syncAll(); }
       };
+    }
+
+    // city picker (reloads the page with ?city=…)
+    for (const id of ['city-select', 'city-select-panel']) {
+      const cs = $(id);
+      if (!cs) continue;
+      for (const c of this.opts.cities || []) {
+        const o = document.createElement('option');
+        o.value = c.id; o.textContent = c.name;
+        cs.appendChild(o);
+      }
+      cs.value = this.opts.city;
+      cs.onchange = () => this.cb.onCity(cs.value);
     }
 
     const presets = $('presets'), sel = $('cam-select');
@@ -265,14 +279,23 @@ export class UI {
   }
 
   // ---------------- per-frame ----------------
-  update(year, tod) {
+  update(year, tod, clock) {
     $('tl-handle').style.left = `${pct(year)}%`;
     $('tl-progress').style.width = `${pct(year)}%`;
     const yi = Math.floor(year);
     $('tl-tip').textContent = yi;
-    const inFire = year >= FIRE_WINDOW[0] && year < FIRE_WINDOW[1];
-    $('month').textContent = inFire ? monthOf(year) : '';
-    if (yi !== this.lastYearInt || inFire) {
+    // special moments (a fire, 9/11) show a calendar/clock and a caption
+    const label = clock ? clock.label : '';
+    if (label !== this._label) { $('month').textContent = label; this._label = label; }
+    const cap = clock && clock.caption ? clock.caption : '';
+    if (cap !== this._cap) {
+      const el = $('moment');
+      el.textContent = cap;
+      el.classList.toggle('show', !!cap);
+      el.classList.toggle('memorial', !!(clock && clock.memorial));
+      this._cap = cap;
+    }
+    if (yi !== this.lastYearInt || clock) {
       this.lastYearInt = yi;
       $('year').textContent = yi;
       const era = eraAt(year);
@@ -284,7 +307,7 @@ export class UI {
         $('era-dot').style.color = era.color;
         $('spec').hidden = !era.speculative;
       }
-      const past = EVENTS.filter(e => e.y <= year + 0.01).slice(-4).reverse();
+      const past = EVENTS.filter(e => e.y <= year + (clock ? 0 : 0.01)).slice(-4).reverse();
       $('events').innerHTML = past.map(e => `<li class="${year - e.y < 4 ? 'fresh' : ''}"><b>${Math.floor(e.y)}</b><span>${e.t}</span></li>`).join('');
     }
     const h = Math.floor(tod), m = Math.floor((tod - h) * 60);
