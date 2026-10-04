@@ -153,3 +153,57 @@ kbd { font-family: var(--font); font-size: 10.5px; padding: 1px 5px; border-radi
   select { max-width: 130px; }
 }
 #ui.hidden .tick { pointer-events: none; }
+
+/* ---------- touch: toolbar, toast, bigger hit targets ---------- */
+html, body { overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+button, .seg button, select, input { touch-action: manipulation; }
+#touchbar {
+  position: absolute; right: max(14px, env(safe-area-inset-right)); top: 50%; transform: translateY(-50%);
+  display: none; flex-direction: column; gap: 8px; padding: 8px; border-radius: 16px;
+  background: var(--glass-strong); border: 1px solid var(--line); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+#ui.hidden #touchbar { display: none !important; }
+#touchbar button {
+  width: 52px; height: 52px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.05);
+  color: var(--text); font-size: 20px; cursor: pointer;
+}
+#touchbar button.on { background: rgba(242, 180, 90, 0.28); border-color: var(--accent); }
+#touchbar button:active { transform: scale(0.94); }
+#toast {
+  position: fixed; left: 50%; top: 20px; transform: translate(-50%, -20px); z-index: 40; max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 16px; border-radius: 12px; background: rgba(12, 15, 20, 0.88); color: var(--text); font-size: 14px; text-align: center;
+  border: 1px solid var(--line); opacity: 0; pointer-events: none; transition: opacity 0.3s, transform 0.3s;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (pointer: coarse) {
+  #touchbar { display: flex; }
+  #ui > #touchbar { pointer-events: auto; }
+  .icon-btn { width: 46px; height: 46px; font-size: 20px; }
+  .play { width: 58px; height: 58px; font-size: 22px; }
+  .seg button { padding: 10px 14px; font-size: 14px; }
+  .seg.small button { padding: 10px 12px; }
+  select { padding: 11px 10px; font-size: 14px; }
+  .timeline { height: 60px; }
+  .eras, .progress { top: 18px; height: 14px; }
+  .handle { top: 8px; width: 8px; height: 34px; margin-left: -4px; border-radius: 4px; }
+  .handle span { bottom: 38px; font-size: 13px; padding: 3px 8px; }
+  .scale { top: 38px; font-size: 11px; }
+  .tick { top: 12px; height: 26px; width: 4px; margin-left: -2px; }
+  .tick::after { content: ''; position: absolute; left: -10px; right: -10px; top: -8px; bottom: -8px; }
+  .jumps button { padding: 8px 14px; font-size: 13px; }
+  .check { font-size: 14px; padding: 4px 0; }
+  .check input { width: 20px; height: 20px; }
+  input[type=range] { height: 30px; }
+  .presets button { padding: 11px 12px; font-size: 14px; }
+  .keys { display: none; }
+  #hud { pointer-events: none; }
+  .panel { width: 340px; }
+  #show-ui { opacity: 0.8; padding: 12px 18px; font-size: 15px; }
+}
+#panel:not([hidden]) ~ #touchbar { display: none !important; }
+@media (pointer: coarse) and (max-width: 760px) {
+  #touchbar { top: 38%; gap: 6px; padding: 6px; }
+  #touchbar button { width: 42px; height: 42px; font-size: 17px; }
+  #toast { top: auto; bottom: 230px; }
+}

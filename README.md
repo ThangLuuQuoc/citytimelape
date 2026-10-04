@@ -26,6 +26,17 @@ Any static server works, but opening `index.html` as a file does not, because ES
 | **H** | hide the UI (cinematic mode) |
 | ⚙ | time of day, day–night cycle, season, quality, layers (traffic, smoke, shadows, bloom, light trails) |
 
+**Touch (tablet / phone):**
+
+| | |
+|---|---|
+| Swipe sideways on the scene | move through time (locked camera) |
+| Double-tap | play / pause |
+| Two fingers | switch to the free camera, then drag = orbit, pinch = zoom, two-finger drag = pan |
+| Side toolbar | ◀ ▶ camera, ✋ free/locked, ☾ day/night, 🏷 labels, ⤢ hide UI |
+
+Buttons and the timeline get bigger automatically on touch screens. Add the page to the home screen for full-screen use.
+
 The URL hash keeps the year, time of day and camera (`#y=1871.80&tod=21&cam=harbor`), so you can share a moment as a link.
 
 ## What's modelled

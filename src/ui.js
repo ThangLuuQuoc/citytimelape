@@ -17,6 +17,7 @@ export class UI {
     this.buildTimeline();
     this.bindControls();
     this.bindKeys();
+    this.bindTouchbar();
     this.syncAll();
   }
 
@@ -167,6 +168,40 @@ export class UI {
     });
   }
 
+  // floating toolbar for tablets: camera prev/next, free/locked, night, labels, hide UI
+  bindTouchbar() {
+    const s = this.s;
+    $('tb-prev').onclick = () => this.cyclePreset(-1);
+    $('tb-next').onclick = () => this.cyclePreset(1);
+    $('tb-free').onclick = () => {
+      this.cb.onCamMode(s.camMode === 'free' ? 'locked' : 'free');
+      this.syncAll();
+      this.toast(s.camMode === 'free' ? 'Free camera: drag to orbit · pinch to zoom · two fingers to pan' : 'Camera locked: swipe sideways to move through time');
+    };
+    $('tb-night').onclick = () => this.toggleNight();
+    $('tb-labels').onclick = () => { s.labels = !s.labels; this.syncAll(); };
+    $('tb-hide').onclick = () => this.toggleUI();
+    if (matchMedia('(pointer: coarse)').matches) {
+      setTimeout(() => this.toast('Swipe sideways to move through time · double-tap to play/pause · two fingers for free camera', 5000), 1500);
+    }
+  }
+
+  cyclePreset(d) {
+    const ids = Object.keys(this.presets);
+    const i = (ids.indexOf(this.s.preset) + d + ids.length) % ids.length;
+    this.cb.onPreset(ids[i]);
+    this.syncAll();
+    this.toast(this.presets[ids[i]].name, 1600);
+  }
+
+  toast(text, ms = 3200) {
+    const el = $('toast');
+    el.textContent = text;
+    el.classList.add('show');
+    clearTimeout(this._toastT);
+    this._toastT = setTimeout(() => el.classList.remove('show'), ms);
+  }
+
   togglePlay() {
     const s = this.s;
     if (!s.playing && s.year >= END_YEAR - 0.01) s.year = START_YEAR;
@@ -201,6 +236,8 @@ export class UI {
     $('labels').checked = s.labels;
     $('autoday').checked = s.autoDay;
     $('trails').checked = s.trails;
+    $('tb-free').classList.toggle('on', s.camMode === 'free');
+    $('tb-labels').classList.toggle('on', s.labels);
     this.syncPlay();
   }
 

@@ -18,6 +18,7 @@ import { Life } from './life.js';
 import { Waterfront } from './waterfront.js';
 import { ribbonGeometry } from './geom.js';
 import { UI } from './ui.js';
+import { bindGestures } from './touch.js';
 
 const setStatus = (t) => { const el = document.getElementById('loading-text'); if (el) el.textContent = t; };
 // setTimeout (not rAF) so loading also progresses in a background tab
@@ -179,13 +180,16 @@ async function main() {
   const life = new Life(scene, waterfront);
 
   // ------------------------------------------------------------ camera
-  const controls = new OrbitControls(camera, labelRenderer.domElement);
+  // the label layer ignores pointer events, so the canvas itself receives mouse and touch input
+  const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.maxPolarAngle = Math.PI * 0.495;
   controls.minDistance = 40;
   controls.maxDistance = 20000;
   controls.enabled = false;
+  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+  controls.zoomSpeed = 1.2;
   let camTween = null;
   function applyPreset(id, instant = false) {
     const p = PRESETS[id] || PRESETS.harbor;
@@ -250,6 +254,17 @@ async function main() {
     onCamMode: m => setCamMode(m),
     onQuality: () => applyQuality(),
   }, PRESETS);
+
+  bindGestures(renderer.domElement, {
+    mode: () => state.camMode,
+    year: () => state.year,
+    playing: () => state.playing,
+    setPlaying: (v) => { state.playing = v; ui.syncPlay(); },
+    togglePlay: () => ui.togglePlay(),
+    seek: (y) => { state.year = clamp(y, START_YEAR, END_YEAR); },
+    free: () => { setCamMode('free'); ui.syncAll(); },
+    toast: (t) => ui.toast(t),
+  });
 
   // ------------------------------------------------------------ world update
   const sunDir = new THREE.Vector3();
