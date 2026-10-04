@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chicago 1800–2050</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <div id="loading">
+    <div class="loading-title">Chicago <span>1800 → 2050</span></div>
+    <div id="loading-text">Loading three.js…</div>
+  </div>
+
+  <div id="ui">
+    <header id="hud">
+      <div class="kicker">Chicago, Illinois · fixed drone time-lapse</div>
+      <div class="year-row">
+        <div id="year" class="year">1800</div>
+        <div id="month" class="month"></div>
+      </div>
+      <div class="era-row">
+        <span id="era-dot" class="era-dot"></span>
+        <span id="era" class="era">Prairie &amp; Portage</span>
+        <span id="spec" class="badge" hidden>Speculative</span>
+      </div>
+      <p id="era-text" class="era-text"></p>
+      <ul id="events" class="events"></ul>
+    </header>
+
+    <aside id="panel" class="panel" hidden>
+      <div class="panel-head">
+        <span>Settings</span>
+        <button class="icon-btn" id="panel-close" title="Close">✕</button>
+      </div>
+
+      <div class="group">
+        <label class="lbl">Time of day <b id="tod-val">10:00</b></label>
+        <input type="range" id="tod" min="0" max="24" step="0.05" value="10">
+        <label class="check"><input type="checkbox" id="autoday"> Day–night cycle</label>
+      </div>
+
+      <div class="group">
+        <label class="lbl">Season</label>
+        <div class="seg" id="season">
+          <button data-v="spring">Spring</button><button data-v="summer">Summer</button><button data-v="autumn">Autumn</button><button data-v="winter">Winter</button><button data-v="cycle">Cycle</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <label class="lbl">Camera</label>
+        <div class="seg" id="cammode">
+          <button data-v="locked">Locked</button><button data-v="free">Free orbit</button>
+        </div>
+        <div class="presets" id="presets"></div>
+      </div>
+
+      <div class="group">
+        <label class="lbl">Quality <b id="fps-val"></b></label>
+        <div class="seg" id="quality">
+          <button data-v="auto">Auto</button><button data-v="high">High</button><button data-v="medium">Medium</button><button data-v="low">Low</button>
+        </div>
+      </div>
+
+      <div class="group cols">
+        <label class="check"><input type="checkbox" id="labels"> Landmark labels</label>
+        <label class="check"><input type="checkbox" id="traffic"> Traffic &amp; boats</label>
+        <label class="check"><input type="checkbox" id="smoke"> Smoke</label>
+        <label class="check"><input type="checkbox" id="slow"> Slow at key events</label>
+        <label class="check"><input type="checkbox" id="loop"> Loop playback</label>
+        <label class="check"><input type="checkbox" id="shadows"> Shadows</label>
+        <label class="check"><input type="checkbox" id="bloom"> Bloom</label>
+        <label class="check"><input type="checkbox" id="trails"> Light trails</label>
+      </div>
+
+      <div class="keys">
+        <span><kbd>Space</kbd> play</span><span><kbd>←</kbd><kbd>→</kbd> ±1 yr</span><span><kbd>Shift</kbd> ±10</span>
+        <span><kbd>1</kbd>–<kbd>6</kbd> cameras</span><span><kbd>F</kbd> free cam</span><span><kbd>N</kbd> night</span><span><kbd>H</kbd> hide UI</span>
+      </div>
+    </aside>
+
+    <footer id="bar">
+      <div class="timeline" id="timeline">
+        <div class="eras" id="tl-eras"></div>
+        <div class="ticks" id="tl-ticks"></div>
+        <div class="progress" id="tl-progress"></div>
+        <div class="handle" id="tl-handle"><span id="tl-tip">1800</span></div>
+        <div class="scale" id="tl-scale"></div>
+      </div>
+      <div class="controls">
+        <div class="cluster">
+          <button class="icon-btn" id="back10" title="Back 10 years (Shift+←)">«</button>
+          <button class="icon-btn" id="back1" title="Back 1 year (←)">‹</button>
+          <button class="play" id="play" title="Play / pause (Space)">▶</button>
+          <button class="icon-btn" id="fwd1" title="Forward 1 year (→)">›</button>
+          <button class="icon-btn" id="fwd10" title="Forward 10 years (Shift+→)">»</button>
+        </div>
+        <div class="cluster">
+          <label class="lbl-inline">Speed</label>
+          <div class="seg small" id="speed">
+            <button data-v="1">1</button><button data-v="3">3</button><button data-v="6">6</button><button data-v="12">12</button><button data-v="25">25</button>
+          </div>
+          <span class="unit">yrs/s</span>
+        </div>
+        <div class="cluster jumps" id="jumps"></div>
+        <div class="cluster right">
+          <select id="cam-select" title="Camera"></select>
+          <button class="icon-btn" id="night-btn" title="Toggle day / night (N)">☾</button>
+          <button class="icon-btn" id="settings" title="Settings">⚙</button>
+          <button class="icon-btn" id="hide" title="Hide UI (H)">⤢</button>
+        </div>
+      </div>
+    </footer>
+  </div>
+  <button id="show-ui" hidden title="Show UI (H)">Show controls</button>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
